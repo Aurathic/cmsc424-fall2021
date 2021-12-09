@@ -4,39 +4,46 @@
 collection_and_queries = [None] * 13
 
 ### 0. Return all the entries in accounts collection
-collection_and_queries[0] = ('transactions', {})
+collection_and_queries[0] = ('accounts', {})
 
 ### 1. Find all information for the customer with username 'fmiller'
-collection_and_queries[1] = ('customers', {})
+collection_and_queries[1] = ('customers', {"username": "fmiller"})
 
 ### 2. For all customers with first name 'Natalie', return their username, name, and address
 ### Use 'regex' functionality to do the matching
-collection_and_queries[2] = ('customers', {}, {})
+collection_and_queries[2] = ('customers', {"name": {"$regex": "^Natalie"}}, {"username": 1, "name": 1, "address": 1})
 
 ### 3. Find all accounts with a 'products' array containing 'Commodity' -- return the '_id' and 'account_id'
-collection_and_queries[3] = ('accounts', {}, {})
+collection_and_queries[3] = ('accounts', {"products": "Commodity"}, {"account_id": 1})
 
 ### 4. Find all accounts with either limit <= 9000 or products array exactly ["Commodity", "InvestmentStock"] in that order -- return the entire accounts information
 ### Use "$or" to do a disjunction
-collection_and_queries[4] = ('accounts', {})
+collection_and_queries[4] = ('accounts', {"$or": [{"limit": {"$lte": 9000}}, {"products": ["Commodity", "InvestmentStock"]}]})
 
 ### 5. Find all accounts with limit <= 9000 AND products array exactly ["Commodity", "InvestmentStock"] in that order -- return the entire accounts information
-collection_and_queries[5] = ('accounts', {})
+collection_and_queries[5] = ('accounts', {"$and": [{"limit": {"$lte": 9000}}, {"products": ["Commodity", "InvestmentStock"]}]})
 
 ### 6. Find all accounts where the second entry in the products array is 'Brokerage' -- return the entire accounts information
-collection_and_queries[6] = ('accounts', {})
+collection_and_queries[6] = ('accounts', {"products.1": "Brokerage"})
 
 ### 7. On the customers collection, use aggregation and grouping to find the number of customers born in each month
 ### The output will contain documents like: {'_id': 7, 'totalCount': 42} 
 ### Use '$month' function to operate on the dates, and use '$sum' aggregate to do the counting
 ### https://database.guide/mongodb-month/
-collection_and_queries[7] = ('customers', [])
+collection_and_queries[7] = ('customers', [
+    {"$project": {"month": {"$month": "$birthdate"}}},
+    {"$group": {"_id": "$month", "totalCount": {"$sum": 1}}}
+])
 
 ### 8. Modify the above query to only count the customers whose name starts with any letter between 'A' and 'G' (inclusive). 
 ### The output will contain documents like: {'_id': 2, 'totalCount': 17}
 ###
 ### Use '$match' along with '$group' as above.
-collection_and_queries[8] = ('customers', [])
+collection_and_queries[8] = ('customers', [
+    {"$match": {"name": {"$regex": "^[A-G]"}}},
+    {"$project": {"month": {"$month": "$birthdate"}}},
+    {"$group": {"_id": "$month", "totalCount": {"$sum": 1}}}
+])
 
 ### 9. In the 'transactions' collection, all transactions are inside a single array, making it difficult to operate on them. 
 ### However, we can use 'unwind' to create a separate document for each of the transactions. 
@@ -49,7 +56,11 @@ collection_and_queries[8] = ('customers', [])
 ### One of the outputs:
 ### {'_id': ObjectId('5ca4bbc1a2dd94ee58161cd5'), 'account_id': 463155, 'transactions': {'amount': 6691, 'symbol': 'amd', 'transaction_code': 'buy'}}
 ###
-collection_and_queries[9] = ('transactions', [])
+collection_and_queries[9] = ('transactions', [
+    {"$match": {"transaction_count": {"$lt": 10}}},
+    {"$unwind": "$transactions"},
+    {"$project": {"account_id": 1, "transactions.symbol": 1, "transactions.transaction_code": 1, "transactions.amount": 1}}
+])
 
 ### 10. Use the result of the above query to compute the total number shares sold or bought for each symbol across the entire collection of accounts
 ### However, DO NOT restrict it to only accounts with < 10 transactions.
@@ -60,7 +71,13 @@ collection_and_queries[9] = ('transactions', [])
 ###       {'_id': 'crm', 'totalCount': 27099929}
 ###       {'_id': 'goog', 'totalCount': 27029894}
 ###       {'_id': 'nvda', 'totalCount': 26108705}
-collection_and_queries[10] = ('transactions', [])
+collection_and_queries[10] = ('transactions', [
+    {"$unwind": "$transactions"},
+    {"$group": {"_id": "$transactions.symbol", "totalCount": {"$sum": "$transactions.amount"}}},
+    {"$sort": {"totalCount": -1}}
+])
+
+# TODO The above code doesn't work
 
 ### 11. Use $lookup to do a "join" between customers and accounts to find, for each customer the number of accounts they have with 'InvestmentFund' as a product (i.e., the number of their accounts where 'InvestmentFund' is in the 'products' array).
 ### Sort the final output by 'username' in the ascending order
@@ -71,7 +88,13 @@ collection_and_queries[10] = ('transactions', [])
 ###        {'_id': 'allenhubbard', 'totalCount': 2}
 ###        {'_id': 'alvarezdavid', 'totalCount': 3}
 
-collection_and_queries[11] = ('customers', [])
+collection_and_queries[11] = ('customers', [
+    {"$lookup": {"from": "accounts", "localField": "accounts", "foreignField": "account_id", "as": "match_accounts"}},
+    {"$unwind": "$match_accounts"},
+    {"$match": {"match_accounts.products": "InvestmentFund"}},
+    {"$group": {"_id": "$username", "totalCount": {"$sum": 1}}},
+    {"$sort": {"_id": 1}}
+])
 
 ### 12. We want to find all accounts that have exactly 3 products and <= 10 transactions associated with them.
 ### Use '$lookup' and '$group' to do so by joining accounts and transactions. This would be a multi-stage pipeline, possibly with multiple groups and matches.
@@ -84,4 +107,11 @@ collection_and_queries[11] = ('customers', [])
 ###
 ### Use unwind and addFields to add the top-level field 'transaction_count' to accounts
 ### Sort the final output by account_id
-collection_and_queries[12] = ('accounts', [])
+collection_and_queries[12] = ('accounts', [
+    {"$match": {"products": {"$size": 3}}},
+    {"$lookup": {"from": "transactions", "localField": "account_id", "foreignField": "account_id", "as": "match_transactions"}},
+    {"$addFields": {"transaction_count": {"$first": "$match_transactions"}}}, #un-nest transactions data, since there should be only 1 match
+    {"$addFields": {"transaction_count": {"$first": "$match_transactions.transaction_count"}}}, # extract transactions_count
+    {"$project": {"account_id": 1, "products": 1, "transaction_count": 1}},
+    {"$match": {"transaction_count": {"$lte": 10}}}
+])  

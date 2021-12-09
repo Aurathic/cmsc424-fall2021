@@ -16,7 +16,8 @@ public class JDBCExample
         System.out.println("PostgreSQL JDBC Driver Registered!");
         Connection connection = null;
         try {
-            connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/socialnetwork","vagrant", "vagrant");
+             //connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/socialnetwork","vagrant","vagrant");
+             connection = DriverManager.getConnection("jdbc:postgresql://localhost:5432/socialnetwork","postgres","postgres");
         } catch (SQLException e) {
             System.out.println("Connection Failed! Check output console");
             e.printStackTrace();

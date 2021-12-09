@@ -120,4 +120,14 @@ def query8b():
 	for t in dv.get_next():
 		print("---> " + str(t))
 
+def query8c():
+	scan1 = SequentialScan(db1.getRelation("r3"))
+	scan2 = SequentialScan(db1.getRelation("r4"))
+	dv = Division(scan1, scan2)
+	print("==================== Executing A Division Operation ================")
+	dv.init()
+	for t in dv.get_next():
+		print("---> " + str(t))
+
 query8b()
+query8c()

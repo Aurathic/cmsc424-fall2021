@@ -27,27 +27,46 @@ def searchExample():
 	Globals.printBlockAccesses = False
 
 # Find a record by key and delete the first tuple in the results -- print out the resulting trees
-def deleteFromTree(deleteKey):
+def deleteFromTree(deleteKey, printTree=True):
 	print("================================================================================")
 	print("Deleting the entry for key " + deleteKey)
 	index = db1.getIndex("instructor", "name")
 	results = index.searchByKey(deleteKey)
 	db1.getRelation("instructor").deleteTuple(results[0])
 	# The BTrees should have been adjusted automatically
-	index.printTree()
+	if printTree:
+		index.printTree()
 	#db1.getIndex("instructor", "dept_name").printTree()
 
 
 # Example of a search can be found in searchExample() above
 searchExample()
 
-if True:
+originalDeletions = False
+
+if originalDeletions:
 	# A delete that works
 	deleteFromTree("Crick")
 	db1.getIndex("instructor", "name").printTree()
 	deleteFromTree("Califieri")
 	db1.getIndex("instructor", "name").printTree()
 else:
+	# user created delete
+	#deleteFromTree("Srinivasan")
+	#db1.getIndex("instructor", "name").printTree()
+	
+	#deleteFromTree("Gold", False)
+	#deleteFromTree("Katz", False)
+	#deleteFromTree("Kim", False)
+	#deleteFromTree("Lamport", False)
+	#deleteFromTree("El Said")
+
+	deleteFromTree("Gold", False)
+	deleteFromTree("Katz", False)
+	deleteFromTree("Einstein")
+	deleteFromTree("El Said")
+
+if False:
 	# A delete that doesn't work because of missing functionality
 	deleteFromTree("Mozart")
 	db1.getIndex("instructor", "name").printTree()

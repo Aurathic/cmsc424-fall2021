@@ -1,4 +1,6 @@
 from disk_relations import *
+from statistics import median
+from itertools import compress
 
 # We will implement our operators using the iterator interface
 # discussed in Section 12.7.2.1
@@ -130,7 +132,41 @@ class HashJoin(Operator):
                         yield Tuple(None, output)
 
         elif self.jointype == self.FULL_OUTER_JOIN:
-            raise ValueError("Functionality to be implemented")
+             # First, we load up all the tuples from the left and right input into the hash table
+            hashtable = dict()
+            for r in self.right_child.get_next():
+                key = r.getAttribute(self.right_attribute)
+                if key in hashtable:
+                    hashtable[r.getAttribute(self.right_attribute)][1].append(r)
+                else: 
+                    hashtable[r.getAttribute(self.right_attribute)] = [[],[r]]
+
+            for l in self.left_child.get_next():
+                key = l.getAttribute(self.left_attribute)
+                if key in hashtable:
+                    hashtable[l.getAttribute(self.left_attribute)][0].append(l)
+                else: 
+                    hashtable[l.getAttribute(self.left_attribute)] = [[l],[]]
+
+            for value in hashtable.values():
+                if len(value[1]) == 0: # output [<elements of l>, NULL, NULL ...] for all left tuples
+                    for l in value[0]:
+                        output = list(l.t)
+                        for _ in self.right_child.relation.schema:
+                            output.append("NULL")
+                        yield Tuple(None, output)
+                elif len(value[0]) == 0: # output [NULL, NULL ..., <elements of r>] for all right tuples
+                    for r in value[1]:
+                        output = []
+                        for _ in self.left_child.relation.schema:
+                            output.append("NULL")
+                        output.extend(list(r.t))
+                        yield Tuple(None, output)
+                else: # do an inner product on value[0] and value[1]
+                    for l in value[0]:
+                        for r in value[1]:
+                            yield Tuple(None, list(l.t) + list(r.t))
+            #raise ValueError("Functionality to be implemented")
         else:
             raise ValueError("This should not happen")
 
@@ -151,7 +187,7 @@ class GroupByAggregate(Operator):
 
     @staticmethod
     def initial_value(aggregate_function):
-        initial_values = [0, 0, None, None, None, None, None]
+        initial_values = [0, 0, None, None, (0, 0), [], {}]
         return initial_values[aggregate_function]
 
     @staticmethod
@@ -171,11 +207,18 @@ class GroupByAggregate(Operator):
             else:
                 return min(current_aggregate, new_value)
         elif aggregate_function == GroupByAggregate.AVERAGE:
-            raise ValueError("Functionality to be implemented")
+            return (current_aggregate[0] + 1, current_aggregate[1]+new_value)
+            #raise ValueError("Functionality to be implemented")
         elif aggregate_function == GroupByAggregate.MEDIAN:
-            raise ValueError("Functionality to be implemented")
+            return current_aggregate + [new_value]
+            #raise ValueError("Functionality to be implemented")
         elif aggregate_function == GroupByAggregate.MODE:
-            raise ValueError("Functionality to be implemented")
+            if new_value in current_aggregate:
+                current_aggregate[new_value] = current_aggregate[new_value] + 1
+            else:
+                current_aggregate[new_value] = 1
+            return current_aggregate
+            #raise ValueError("Functionality to be implemented")
         else:
             raise ValueError("No such aggregate")
 
@@ -187,11 +230,23 @@ class GroupByAggregate(Operator):
         if aggregate_function in [GroupByAggregate.COUNT, GroupByAggregate.SUM, GroupByAggregate.MIN, GroupByAggregate.MAX]:
             return current_aggregate 
         elif aggregate_function == GroupByAggregate.AVERAGE:
-            raise ValueError("Functionality to be implemented")
+            return None if current_aggregate[0] == 0 else current_aggregate[1] / current_aggregate[0]
+            #raise ValueError("Functionality to be implemented")
         elif aggregate_function == GroupByAggregate.MEDIAN:
-            raise ValueError("Functionality to be implemented")
+            if len(current_aggregate) == 0:
+                return None
+            else:
+                return median(current_aggregate)
+                #current_aggregate.sort()
+                #if len(current_aggregate) % 2 == 1:
+                #    return current_aggregate[len(current_aggregate)//2]
+                #else:
+                #    # TODO Fix
+                #    return sum(current_aggregate[len(current_aggregate)//2-1:len(current_aggregate)//2])/2
+                #raise ValueError("Functionality to be implemented")
         elif aggregate_function == GroupByAggregate.MODE:
-            raise ValueError("Functionality to be implemented")
+            return None if len(current_aggregate) == 0 else max(current_aggregate, key=current_aggregate.get)
+            #raise ValueError("Functionality to be implemented")
         else:
             raise ValueError("No such aggregate")
 
@@ -295,6 +350,11 @@ class SortMergeJoin(Operator):
         self.left_child.close()
         self.right_child.close()
 
+# Get attributes in given order from schema
+# take in a Tuple and list, output a tuple (the python object) of relevant elements 
+def get_attributes(t, schema):
+    return tuple([t.getAttribute(s) for s in schema])
+
 # You have to implement the Division operator 
 # This operation takes in two relations: left and right. The schema of the right relation must be a subset of the left relation. 
 # Let's say: left = (A, B, C), and right = (B).
@@ -319,7 +379,30 @@ class Division(Operator):
 
     # As above, use 'yield' to simplify writing this code
     def get_next(self):
-        raise ValueError("Functionality to be implemented")
+        left_dict = dict()
+
+        non_shared_schema = [x not in self.right_child.relation.schema for x in self.left_child.relation.schema]
+        output_schema = list(compress(self.left_child.relation.schema, non_shared_schema))
+
+        # Get all of the left child Tuples in a nice dictionary format
+        # This maps from t[R-S] to a list of t[S] 
+        for v in self.left_child.get_next():
+            key = get_attributes(v, output_schema)
+            value = get_attributes(v, self.right_child.relation.schema)
+            if key in left_dict:
+                left_dict[key].append(value)
+            else:
+                left_dict[key] = [value]
+        
+        right_list = [v.t if type(v.t) is tuple else tuple([v.t]) for v in self.right_child.get_next()]
+
+        for key in left_dict:
+            left_list = left_dict[key]
+            print(f"{key}: {right_list} subset of {left_list}")
+            if all(v in left_list for v in right_list):
+                yield Tuple(output_schema, list(key))
+
+        #raise ValueError("Functionality to be implemented")
         
     # Typically you would close any open files etc.
     def close(self):

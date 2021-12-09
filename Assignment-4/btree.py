@@ -193,10 +193,58 @@ class BTreeBlock(Block):
             self.keysAndPointers.append(key)
             self.keysAndPointers.extend(otherBlock.keysAndPointers)
 
+    def getParentKey(self):
+        parentBlock = self.parent.getBlock()
+        for index in range(0, len(parentBlock.keysAndPointers), 2):
+            if parentBlock.keysAndPointers[index].blockNumber == self.blockNumber:
+                return parentBlock.keysAndPointers[index+1]
+
     def redistributeWithBlock(self, otherBlock):
         print("Redistributing entries between " + str(self) + " and " + str(otherBlock))
-        raise ValueError("Functionality to be implemented")
-
+        #raise ValueError("Functionality to be implemented")
+        kp = self.getParentKey()
+        # if otherBlock is underfull, transfer "from left to right"
+        if otherBlock.isUnderfull():
+            if otherBlock.isLeaf:
+                # transfer pointer/key pair (km, pm) from end of otherBlock to beginning of self
+                pm, km = self.keysAndPointers[-3:-1]
+                del self.keysAndPointers[-3:-1]   
+                otherBlock.keysAndPointers.insert(0,pm)
+                otherBlock.keysAndPointers.insert(1,km)
+                # replace 'parent key' with km
+                return km
+            else:    
+                # get last key and pointer from self 
+                km1, pm = self.keysAndPointers[-2:]
+                del self.keysAndPointers[-2:]
+                # Update parent pointers of the blocks which were just removed
+                pm.getBlock().parent = Pointer(otherBlock.blockNumber)
+                # move km1 to the key of the parent, and move the key of the parent to otherBlock
+                otherBlock.keysAndPointers.insert(0,pm)
+                otherBlock.keysAndPointers.insert(1,kp)
+                return km1
+        # else, transfer "from right to left"
+        elif self.isUnderfull():
+            if self.isLeaf:
+                # move first pointer & key from otherBlock to self, set parent key as new first entry in otherBlock 
+                p1, k1 = otherBlock.keysAndPointers[:2]
+                del otherBlock.keysAndPointers[:2]
+                self.keysAndPointers.insert(-1,p1)
+                self.keysAndPointers.insert(-1,k1)
+                return otherBlock.keysAndPointers[1]
+            else:
+                # TODO FIX
+                print("!!! RIGHT TO LEFT RESDISTRIBUTION, NON-LEAF !!!")
+                p1, k1 = otherBlock.keysAndPointers[:2]
+                print(f"p1: {p1}, k1: {k1}")
+                del otherBlock.keysAndPointers[:2]
+                p1.getBlock().parent = Pointer(self.blockNumber)
+                self.keysAndPointers.append(kp)
+                self.keysAndPointers.append(p1)
+                return k1
+        else:
+            raise ValueError("Sibling blocks are both underfull, unable to redistribute")
+        
     def isUnderfull(self):
         # Root can't be underful
         if self.parent is None:

@@ -25,7 +25,14 @@ order by birthdate asc;
 ### Output Columns: groupname, rank
 ### Order by: rank, groupname ascending
 queries[1] = """
-select 0;
+with temp as (
+    select groupid, count(userid) as num_users
+    from members
+    group by groupid
+)
+select name as groupname, rank() over(order by num_users desc)
+from (temp natural join groups)
+order by rank asc, groupname asc; 
 """
 
 ### 2. Use window functions to construct a query to associate the average number
@@ -48,8 +55,9 @@ with temp as (
                (select count(*) from follows where follows.userid2 = users.userid) as num_followers
         from users
         )
-select *
-from temp;
+select *, avg(num_followers) over (partition by joined_year) as avg_num_followers_for_that_year
+from temp
+order by joined_year, userid;
 """
 
 ### 3. Similar to the above, but here the goal is to create the following table:
@@ -62,12 +70,23 @@ from temp;
 ###
 ### First few rows of the result look like this:
 ### The "rank" here would be the rank within the counties for that state.
-### user134 | Ronald Miller       |                  0 |            15 |                       8.3750000000000000 |    1
-### user12  | Carol Lopez         |                  0 |            12 |                       8.3750000000000000 |    2
-### user54  | Helen Lee           |                  0 |            11 |                       8.3750000000000000 |    3
+### user134 | Ronald Miller  | 0 | 15 | 8.3750000000000000 | 1
+### user12  | Carol Lopez    | 0 | 12 | 8.3750000000000000 | 2
+### user54  | Helen Lee      | 0 | 11 | 8.3750000000000000 | 3
 
 queries[3] = """
-select 0;
+with temp as (
+        select userid, name, 
+               (select count(*) from status where status.userid = users.userid) as num_status_updates, 
+               (select count(*) from follows where follows.userid2 = users.userid) as num_followers
+        from users
+        )
+select *, 
+    avg(num_followers) over (partition by num_status_updates) as avg_num_followers_for_that_status_update,
+    rank() over (partition by num_status_updates order by num_followers desc)
+from temp
+order by num_status_updates, rank, userid;
+/* TODO Why is the order wrong? */
 """
 
 
@@ -86,7 +105,9 @@ select 0;
 ###             select userid, name, num_friends(userid) from users
 ###
 queries[4] = """
-select 0;
+create function num_friends(in varchar, out num_friends bigint)
+    as $$ select count(userid2) from friends where userid1=$1 $$
+    language sql;
 """
 
 ### 5. Write a function that takes in an userid as input, and returns a JSON string with 
@@ -109,7 +130,28 @@ select 0;
 ### BE CAREFUL WITH WHITE SPACES -- we will remove any spaces before comparing answers, but there is
 ### still a possibility that you fail comparisons because of that.
 queries[5] = """
-select 0;
+create or replace function user_details(in varchar, out details_json varchar) as
+    $$ select '{ "userid": "' || $1 || 
+        '", "name": "' || (select name from users where userid=$1) || 
+        '", "friends": [' || (
+            select string_agg(
+                '{ "name": "' || u.name || '"}',
+                ', ' order by u.name
+            ) 
+            from users as u 
+                inner join friends on u.userid = friends.userid2
+            where friends.userid1 = $1
+        ) || 
+        '], "follows": [' || (
+            select string_agg(
+                '{ "name": "' || u.name || '"}',
+                ', ' order by u.name
+            )
+            from users as u 
+                inner join follows on u.userid = follows.userid1 
+            where follows.userid2 = $1) ||
+        ']}' $$
+    language sql;
 """
 
 ### 6. Create a new table using:
@@ -137,14 +179,30 @@ select 0;
 queries[6] = """
 CREATE OR REPLACE FUNCTION update_influencers_on_insert()
     RETURNS TRIGGER
-    LANGUAGE PLPGSQL
-    AS
+    AS $$ 
+    DECLARE
+        num_followers integer;
+        name varchar; 
+    BEGIN
+        SELECT COUNT(follows.userid1) INTO num_followers FROM follows WHERE follows.userid2 = NEW.userid2;
+        SELECT users.name INTO name FROM users where users.userid = NEW.userid2;
+        IF(NEW.userid2 IN (SELECT userid FROM influencers)) THEN
+            UPDATE influencers SET num_followers = influencers.num_followers + 1 WHERE influencers.userid = NEW.userid2;
+        ELSIF(num_followers >= 10) THEN
+                INSERT INTO influencers VALUES (
+                    NEW.userid2, name, num_followers
+                );
+        END IF;
+        RETURN NULL;
+    END; 
     $$
-    $$;
+    LANGUAGE PLPGSQL;
 """
 
 queries[7] = """
-select 0;
+DROP TRIGGER IF EXISTS update_influencers ON follows;
+CREATE TRIGGER update_influencers AFTER INSERT ON follows
+    FOR EACH ROW EXECUTE PROCEDURE update_influencers_on_insert();
 """
 
 
@@ -173,8 +231,15 @@ select 0;
 queries[8] = """
 with recursive temp(name1, userid1, name2, userid2) as 
 (
-    select 0, 0, 0, 0
+        select u1.name as name1, u1.userid as userid1, u2.name as name2, u2.userid as userid2
+        from friends_small fs, users u1, users u2
+        where fs.userid1 = u1.userid and fs.userid2 = u2.userid
+    union
+        select temp.name1 as name1, temp.userid1 as userid1, users.name as name2, users.userid as userid2
+        from temp, friends_small, users
+        where friends_small.userid1 = temp.userid2 and users.userid = friends_small.userid2 and temp.userid1 <> friends_small.userid2
  )
 select *
-from temp;
+from temp
+order by name1, name2;
 """

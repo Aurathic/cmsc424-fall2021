@@ -2,7 +2,7 @@ drop table if exists likes;
 drop table if exists follows;
 drop table if exists members;
 drop table if exists status;
-drop table if exists friends;
+/*drop table if exists friends;*/
 drop table if exists groups;
 drop table if exists users;
 create table users (userid varchar(10) unique, name varchar(20), birthdate date, joined date);
